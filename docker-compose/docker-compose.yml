@@ -57,14 +57,15 @@ services:
     environment:
       - sonar.jdbc.username=sonar     #数据库参数
       - sonar.jdbc.password=sonar123
-      - sonar.jdbc.url=jdbc:postgresql://db:5432/sonarqube
+      - sonar.jdbc.url=jdbc:postgresql://web_db:5432/sonarqube
     volumes:
       - /alidata/server/sonarqube/sonarqube_conf:/opt/sonarqube/conf
+      - /alidata/server/sonarqube/sonarqube_logs:/opt/sonarqube/logs
       - /alidata/server/sonarqube/sonarqube_data:/opt/sonarqube/data
       - /alidata/server/sonarqube/sonarqube_extensions:/opt/sonarqube/extensions
       - /alidata/server/sonarqube/sonarqube_bundled-plugins:/opt/sonarqube/bundled-plugins
   web_db:
-    image: 'postgres:latest'    #数据库服务器
+    image: 'postgres'    #数据库服务器
     restart: always
     networks:
       - sonarnet
