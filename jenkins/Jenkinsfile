@@ -1,0 +1,65 @@
+pipeline {
+    agent {
+        docker {
+            image 'registry.cn-hangzhou.aliyuncs.com/haowanhudong/haowan:php-fpm-unit-mzq-test'
+            args  '-v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker -v /usr/lib/libltdl.so.7:/usr/lib/x86_64-linux-gnu/libltdl.so.7'
+        }
+    }
+    stages {
+        stage('Preparation') {
+            steps {
+                #更新gitlab状态
+                updateGitlabCommitStatus name: 'dddd555', state: 'running' 
+            }
+        }
+        stage("build & SonarQube analysis") {
+            agent any
+            steps {
+                # 调用 SonarQube 静态扫描
+                def sonarqubeScannerHome = tool name: 'jenkins-SonarQube-client'
+                withSonarQubeEnv('jenkins--SonarQube') {
+                    sh "${sonarqubeScannerHome}/bin/sonar-scanner"
+                }
+            }
+        }
+        stage("build & SonarQube analysis") {
+            agent any
+            steps {
+                # SonarQube 超时 则 报错停止
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        stage('test') {
+            steps {
+                # 执行 phpunit
+                sh "phpunit --version"
+                sh "phpunit --log-junit 'reports/unitreport.xml' --coverage-html 'reports/coverage' --coverage-clover 'reports/coverage/coverage.xml' --whitelist './' *Test.php"
+            }
+        }
+    }
+    post {
+        success{
+            # jenkins 显示 reports/unitreport.xml 信息
+            xunit([JUnit(deleteOutputFiles: true, failIfNotNew: false, pattern: 'reports/unitreport.xml', skipNoTestFiles: false, stopProcessingIfError: false)])
+            # jenkins 显示 coverage.xml 信息
+            step([
+                $class: 'CloverPublisher',
+                cloverReportDir: 'reports/coverage',
+                cloverReportFileName: 'coverage.xml',
+                healthyTarget: [methodCoverage: 70, conditionalCoverage: 80, statementCoverage: 80], // optional, default is: method=70, conditional=80, statement=80
+                unhealthyTarget: [methodCoverage: 50, conditionalCoverage: 50, statementCoverage: 50], // optional, default is none
+                failingTarget: [methodCoverage: 0, conditionalCoverage: 0, statementCoverage: 0]     // optional, default is none
+            ])
+            # 构建成功 设置成功状态
+            updateGitlabCommitStatus name: 'dddd555', state: 'success' 
+            addGitLabMRComment comment: "测试成功，可以合并."
+        }
+        failure {
+            # 构建成功 设置拒绝状态
+            updateGitlabCommitStatus name: 'dddd555', state: 'failed'
+            addGitLabMRComment comment: "构建失败，不允许合并."
+        }
+    }
+}
