@@ -36,6 +36,6 @@ RUN echo "date.timezone = UTC" >> /usr/local/etc/php/php.ini
 # 如果下不下来就用这个，https://img.okwan.com/phpunit-8.0.6.phar
 RUN php -r "copy('https://img.okwan.com/phpunit-8.0.6.phar', 'phpunit-8.0.6.phar');" && \
     chmod +x phpunit-8.0.6.phar && \
-    mv phpunit-8.0.6.phar /usr/local/bin/phpunit \
+    mv ./phpunit-8.0.6.phar /usr/local/bin/phpunit && \
     phpunit --version
 
