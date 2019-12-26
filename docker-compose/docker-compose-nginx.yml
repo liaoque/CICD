@@ -1,0 +1,95 @@
+version: '3'
+services:
+  web_jenkins:
+    image: 'jenkins/jenkins:lts'    #长期支持版 jenkins
+    container_name: jenkins
+    restart: always
+    networks:    #共享 sonarnet 网络
+      - sonarnet
+    privileged: true
+    user: root
+    extra_hosts:
+      - "updates.jenkins-ci.org:192.168.133.129"
+    ports:
+      - '18080:8080'    #定义转发端口
+      - '50000:50000'
+    volumes:
+     - /var/run/docker.sock:/var/run/docker.sock
+     - /usr/bin/docker:/usr/bin/docker
+     - /usr/lib/libltdl.so.7:/usr/lib/x86_64-linux-gnu/libltdl.so.7    #以上三局必须加上，否则jenkins没有权限
+     - /alidata/server/jenkins_home:/var/jenkins_home    #定义挂载目录
+  web_gitlab:
+    image: 'gitlab/gitlab-ce:latest'
+    restart: always
+    networks:    
+      - sonarnet
+    hostname: 'gitlab'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://192.168.133.129'    #修改自己的ip
+            gitlab_rails['time_zone'] = 'Asia/Shanghai'
+            gitlab_rails['smtp_enable'] = true
+            gitlab_rails['smtp_address'] = "smtp.qq.com"      #修改自己的邮件设置
+            gitlab_rails['smtp_port'] = 465
+            gitlab_rails['smtp_user_name'] = "xxx@qq.com"  #用自己的aliyun邮箱
+            gitlab_rails['smtp_password'] = "jvyogahwtqycdaib"
+            gitlab_rails['smtp_domain'] = "qq.com"
+            gitlab_rails['smtp_authentication'] = "login"
+            gitlab_rails['smtp_enable_starttls_auto'] = true
+            gitlab_rails['smtp_tls'] = true
+            gitlab_rails['gitlab_email_from'] = 'xxx@qq.com'
+            gitlab_rails['gitlab_shell_ssh_port'] = 22
+    ports:
+      - '8022:22'    #定义转发端口
+      - '8090:80'
+      - '8443:443'
+    volumes:
+      - /alidata/server/gitlab/config:/etc/gitlab
+      - /alidata/server/gitlab/logs:/var/log/gitlab
+      - /alidata/server/gitlab/data:/var/opt/gitlab
+  web_sonarqube:
+    image: 'sonarqube:lts'      #高版本 sonarqube已经不支持mysql
+    restart: always
+    ports:
+      - "19000:9000"    #定义转发端口
+    depends_on:
+      - web_db    #定义依赖数据库服务器
+    networks:
+      - sonarnet
+    environment:
+      - sonar.jdbc.username=sonar     #数据库参数
+      - sonar.jdbc.password=sonar123
+      - sonar.jdbc.url=jdbc:postgresql://web_db:5432/sonarqube
+    volumes:
+      - /alidata/server/sonarqube/sonarqube_conf:/opt/sonarqube/conf
+      - /alidata/server/sonarqube/sonarqube_logs:/opt/sonarqube/logs
+      - /alidata/server/sonarqube/sonarqube_data:/opt/sonarqube/data
+      - /alidata/server/sonarqube/sonarqube_extensions:/opt/sonarqube/extensions
+      - /alidata/server/sonarqube/sonarqube_bundled-plugins:/opt/sonarqube/bundled-plugins
+  web_db:
+    image: 'postgres'    #数据库服务器
+    restart: always
+    networks:
+      - sonarnet
+    environment:
+      - POSTGRES_USER=sonar     #设置默认帐号密码
+      - POSTGRES_PASSWORD=sonar123
+      - POSTGRES_DB=sonarqube
+    volumes:
+      - /alidata/server/sonarqube/postgresql:/var/lib/postgresql
+      - /alidata/server/sonarqube/postgresql_data:/var/lib/postgresql/data
+  nginx:
+     image: nginx
+     networks:
+      - sonarnet
+     ports:
+       - '80:80'
+     volumes:
+       - '/alidata/server/nginx/conf.d:/etc/nginx/conf.d:ro'
+       - '/alidata/server/nginx/www:/usr/share/nginx/html'
+       - '/alidata/server/nginx/log:/var/log/nginx'
+     restart: always
+
+networks:
+  sonarnet:    #定义一个桥接网络
+    driver: bridge
