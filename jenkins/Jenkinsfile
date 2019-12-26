@@ -1,65 +1,47 @@
-pipeline {
-    agent {
-        docker {
-            image 'registry.cn-hangzhou.aliyuncs.com/haowanhudong/haowan:php-fpm-unit-mzq-test'
-            args  '-v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker -v /usr/lib/libltdl.so.7:/usr/lib/x86_64-linux-gnu/libltdl.so.7'
-        }
+node('master'){        
+    stage('Preparation'){
+        updateGitlabCommitStatus name: 'dddd555', state: 'running' 
+        checkout scm
     }
-    stages {
-        stage('Preparation') {
-            steps {
-                #更新gitlab状态
-                updateGitlabCommitStatus name: 'dddd555', state: 'running' 
+    stage("test") {
+        try{
+            def scannerHome = tool 'jenkinsSonarQubeClient';
+            withSonarQubeEnv('jenkins--SonarQube') {
+                sh "${scannerHome}/bin/sonar-scanner"
             }
-        }
-        stage("build & SonarQube analysis") {
-            agent any
-            steps {
-                # 调用 SonarQube 静态扫描
-                def sonarqubeScannerHome = tool name: 'jenkins-SonarQube-client'
-                withSonarQubeEnv('jenkins--SonarQube') {
-                    sh "${sonarqubeScannerHome}/bin/sonar-scanner"
+            
+            timeout(time: 1, unit: 'HOURS') {
+                def qg = waitForQualityGate()
+                if (qg.status != 'OK') {
+                    error "Pipeline aborted due to quality gate failure: ${qg.status}"
                 }
             }
-        }
-        stage("build & SonarQube analysis") {
-            agent any
-            steps {
-                # SonarQube 超时 则 报错停止
-                timeout(time: 1, unit: 'HOURS') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
-        stage('test') {
-            steps {
-                # 执行 phpunit
+
+            docker.image('registry.cn-shenzhen.aliyuncs.com/liaoque/php-fpm-test:7.4-1.0').inside { 
                 sh "phpunit --version"
-                sh "phpunit --log-junit 'reports/unitreport.xml' --coverage-html 'reports/coverage' --coverage-clover 'reports/coverage/coverage.xml' --whitelist './' *Test.php"
+                sh "phpunit --log-junit 'reports/junit.xml' --coverage-html 'reports/coverage' --coverage-clover 'reports/coverage/coverage.xml' --whitelist './' *Test.php"
             }
-        }
-    }
-    post {
-        success{
-            # jenkins 显示 reports/unitreport.xml 信息
-            xunit([JUnit(deleteOutputFiles: true, failIfNotNew: false, pattern: 'reports/unitreport.xml', skipNoTestFiles: false, stopProcessingIfError: false)])
-            # jenkins 显示 coverage.xml 信息
-            step([
-                $class: 'CloverPublisher',
-                cloverReportDir: 'reports/coverage',
-                cloverReportFileName: 'coverage.xml',
-                healthyTarget: [methodCoverage: 70, conditionalCoverage: 80, statementCoverage: 80], // optional, default is: method=70, conditional=80, statement=80
-                unhealthyTarget: [methodCoverage: 50, conditionalCoverage: 50, statementCoverage: 50], // optional, default is none
-                failingTarget: [methodCoverage: 0, conditionalCoverage: 0, statementCoverage: 0]     // optional, default is none
-            ])
-            # 构建成功 设置成功状态
-            updateGitlabCommitStatus name: 'dddd555', state: 'success' 
-            addGitLabMRComment comment: "测试成功，可以合并."
-        }
-        failure {
-            # 构建成功 设置拒绝状态
+        }catch (exc) {
+            dingTalk accessToken: 'c1c5a3c67781e76e4fd2fa1a98d939896e2c3eb5ddfdd79a4921ea65c9d761c6', imageUrl: 'http://www.iconsdb.com/icons/preview/soylent-red/x-mark-3-xxl.png', jenkinsUrl: 'http://192.168.133.129:18080', message: '失败项目', notifyPeople:'Jenkins-PipeLine'
             updateGitlabCommitStatus name: 'dddd555', state: 'failed'
             addGitLabMRComment comment: "构建失败，不允许合并."
+            throw exc
         }
     }
+    stage("result") {
+        xunit([JUnit(deleteOutputFiles: true, failIfNotNew: true, pattern: 'reports/junit.xml', skipNoTestFiles: false, stopProcessingIfError: false)])
+        step([
+            $class: 'CloverPublisher',
+            cloverReportDir: 'reports/coverage',
+            cloverReportFileName: 'coverage.xml',
+            healthyTarget: [methodCoverage: 70, conditionalCoverage: 80, statementCoverage: 80], // optional, default is: method=70, conditional=80, statement=80
+            unhealthyTarget: [methodCoverage: 50, conditionalCoverage: 50, statementCoverage: 50], // optional, default is none
+            failingTarget: [methodCoverage: 0, conditionalCoverage: 0, statementCoverage: 0]     // optional, default is none
+        ])
+        updateGitlabCommitStatus name: 'dddd555', state: 'success' 
+        addGitLabMRComment comment: "测试成功，可以合并."
+        dingTalk accessToken: 'c1c5a3c67781e76e4fd2fa1a98d939896e2c3eb5ddfdd79a4921ea65c9d761c6', imageUrl: 'http://icons.iconarchive.com/icons/paomedia/small-n-flat/1024/sign-check-icon.png', jenkinsUrl: 'http://192.168.133.129:18080', message: '成功项目', notifyPeople:'Jenkins-PipeLine'
+        
+    }
 }
+
