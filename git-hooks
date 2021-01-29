@@ -1,0 +1,15 @@
+
+
+
+post-receive 例子
+
+#!/bin/bash
+
+while read oldrev newrev refname
+do
+    branch=$(git rev-parse --symbolic --abbrev-ref $refname)
+    if [ "分支名字" == "$branch" ]; then
+        curl -X POST 'http://域名：端口/job路径/buildWithParameters?token=123456&file_time=10m&git_sync=true&git_force=false&git_version=api_staging_v200&check_file=false' --user "admin:11a8382e226a36ca205c7b2fa43c543b91"
+    fi
+done
+
